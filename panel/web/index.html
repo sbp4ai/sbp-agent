@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="color-scheme" content="light">
+<title>tmux · claude</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="login-wrap" id="login" hidden>
+  <form class="login" id="loginForm">
+    <h1>tmux · claude 面板</h1>
+    <p>账号密码在启动目录的 <code>.env</code> 里</p>
+    <label>账号</label>
+    <input id="acc" autocomplete="username" autocapitalize="off">
+    <label>密码</label>
+    <input id="pwd" type="password" autocomplete="current-password">
+    <button type="submit">进入</button>
+    <div class="err" id="loginErr"></div>
+  </form>
+</div>
+
+<div class="app" id="app" hidden>
+  <aside class="sidebar" id="sidebar">
+    <div class="sb-head">
+      <span class="brand">tmux · claude</span>
+      <span class="meta" id="stat"></span>
+      <button class="icon-btn" id="refresh" title="刷新会话（R）">⟳</button>
+    </div>
+    <div class="sb-body" id="tree"></div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <button class="icon-btn sb-toggle" id="menu" title="会话列表">☰</button>
+      <span class="sid" id="curSid">未选择会话</span>
+      <span id="curChips"></span>
+      <span class="spacer"></span>
+      <span class="chip tmux" id="transport" title="">WS</span>
+      <button class="icon-btn" id="snapshot" title="抓一屏" hidden>⟳</button>
+    </header>
+
+    <div class="empty" id="empty">
+      <div class="big">⌨</div>
+      <div>选择左侧会话开始阅读</div>
+      <div style="font-size:11.5px">点开会话才拉最新 20 条，上滑继续翻更早</div>
+    </div>
+
+    <div class="stream" id="stream" hidden><div class="stream-inner" id="msgs"></div></div>
+
+    <div class="screen-wrap closed" id="screenWrap" hidden>
+      <div class="screen-head" id="screenHead">
+        <span class="caret2">▾</span><span>实时屏幕</span>
+        <span class="chip" id="screenState" style="margin-left:auto">—</span>
+      </div>
+      <pre id="screen"></pre>
+    </div>
+
+    <!-- SBP-0.2：agent 摆在终端上的选项，这里变成可点的按钮 -->
+    <div class="prompts" id="prompts" hidden></div>
+
+    <div class="composer" id="composer" hidden>
+      <div class="keys" id="keys"></div>
+      <div class="composer-row">
+        <textarea class="input" id="input" rows="1" placeholder="输入指令，Enter 发送，Shift+Enter 换行"></textarea>
+        <button class="send" id="send" disabled>发送</button>
+      </div>
+      <div class="hint-line" id="hint"></div>
+    </div>
+  </main>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<div class="toast" id="toast"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

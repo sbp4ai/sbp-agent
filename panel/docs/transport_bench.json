@@ -1,0 +1,112 @@
+[
+ {
+  "mode": "WS 推送 ×1",
+  "wall": 15.1,
+  "cpu_kids_per_min": 3.893,
+  "cpu_self_per_min": 2.135,
+  "tmux_runs_per_min": 306.7,
+  "captures_per_min": 63.7,
+  "client_bytes_per_min": 67688,
+  "ticks_per_min": 35.9,
+  "period": 3.0
+ },
+ {
+  "mode": "HTTP 轮询 5s ×1",
+  "wall": 15.8,
+  "cpu_kids_per_min": 3.269,
+  "cpu_self_per_min": 1.804,
+  "tmux_runs_per_min": 261.7,
+  "captures_per_min": 45.5,
+  "client_bytes_per_min": 182620,
+  "ticks_per_min": 22.8,
+  "period": 2.5
+ },
+ {
+  "mode": "HTTP 轮询+ETag 5s ×1",
+  "wall": 15.0,
+  "cpu_kids_per_min": 2.902,
+  "cpu_self_per_min": 1.43,
+  "tmux_runs_per_min": 191.8,
+  "captures_per_min": 36.0,
+  "client_bytes_per_min": 65082,
+  "ticks_per_min": 20.0,
+  "period": 2.5
+ },
+ {
+  "mode": "HTTP 轮询 1s ×1",
+  "wall": 15.2,
+  "cpu_kids_per_min": 6.038,
+  "cpu_self_per_min": 3.555,
+  "tmux_runs_per_min": 466.1,
+  "captures_per_min": 114.6,
+  "client_bytes_per_min": 824176,
+  "ticks_per_min": 83.0,
+  "period": 0.6
+ },
+ {
+  "mode": "HTTP 轮询+ETag 1s ×1",
+  "wall": 15.1,
+  "cpu_kids_per_min": 5.513,
+  "cpu_self_per_min": 3.467,
+  "tmux_runs_per_min": 476.3,
+  "captures_per_min": 119.1,
+  "client_bytes_per_min": 69414,
+  "ticks_per_min": 87.3,
+  "period": 0.6
+ },
+ {
+  "mode": "WS 推送 ×3",
+  "wall": 15.1,
+  "cpu_kids_per_min": 3.705,
+  "cpu_self_per_min": 1.803,
+  "tmux_runs_per_min": 261.6,
+  "captures_per_min": 71.3,
+  "client_bytes_per_min": 37028,
+  "ticks_per_min": 43.6,
+  "period": 3.0
+ },
+ {
+  "mode": "HTTP 轮询 5s ×3",
+  "wall": 15.8,
+  "cpu_kids_per_min": 3.112,
+  "cpu_self_per_min": 1.759,
+  "tmux_runs_per_min": 262.0,
+  "captures_per_min": 45.6,
+  "client_bytes_per_min": 548472,
+  "ticks_per_min": 22.8,
+  "period": 2.5
+ },
+ {
+  "mode": "HTTP 轮询+ETag 5s ×3",
+  "wall": 15.0,
+  "cpu_kids_per_min": 2.806,
+  "cpu_self_per_min": 1.355,
+  "tmux_runs_per_min": 191.7,
+  "captures_per_min": 35.9,
+  "client_bytes_per_min": 195186,
+  "ticks_per_min": 20.0,
+  "period": 2.5
+ },
+ {
+  "mode": "HTTP 轮询 1s ×3",
+  "wall": 15.2,
+  "cpu_kids_per_min": 5.868,
+  "cpu_self_per_min": 3.461,
+  "tmux_runs_per_min": 465.3,
+  "captures_per_min": 114.4,
+  "client_bytes_per_min": 2468164,
+  "ticks_per_min": 82.8,
+  "period": 0.6
+ },
+ {
+  "mode": "HTTP 轮询+ETag 1s ×3",
+  "wall": 15.1,
+  "cpu_kids_per_min": 5.545,
+  "cpu_self_per_min": 3.516,
+  "tmux_runs_per_min": 475.7,
+  "captures_per_min": 118.9,
+  "client_bytes_per_min": 207997,
+  "ticks_per_min": 87.2,
+  "period": 0.6
+ }
+]

@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+venv/
+
+# OS
+.DS_Store
+
+# Secrets / local (panel/.env 含账号密钥，绝不入库)
+.env
+*.log
+
+# WorkBuddy local state
+.workbuddy/
