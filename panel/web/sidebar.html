@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>SBP4AI · tmux 会话监控侧边栏</title>
+<style>
+  :root{
+    --bg:#ffffff; --bg-soft:#f7f8fa; --bg-hover:#f0f4f9;
+    --bd:#e3e7ed; --tx:#1f2329; --tx-dim:#8a9099; --tx-mute:#a6acb5;
+    --accent:#2b6cf6; --live:#18a058; --idle:#b9bec7; --warn:#e8a33d; --err:#d9483f;
+    --r:8px; --r-sm:6px;
+    --fs-xs:11px; --fs-sm:12px; --fs-md:13px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--bg); color:var(--tx);
+    font:var(--fs-md)/1.5 -apple-system,BlinkMacSystemFont,"SF Pro SC","PingFang SC","Helvetica Neue",Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .sb{display:flex;flex-direction:column;height:100%;min-width:0}
+
+  /* ---------- header ---------- */
+  .hd{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--bd);background:var(--bg-soft);flex:0 0 auto}
+  .hd .dot{width:8px;height:8px;border-radius:50%;background:var(--live);flex:0 0 auto}
+  .hd .dot.bad{background:var(--err)}
+  .hd h1{margin:0;font-size:var(--fs-md);font-weight:600;letter-spacing:.02em}
+  .hd .sub{color:var(--tx-mute);font-size:var(--fs-xs)}
+  .hd .sp{flex:1}
+  .iconbtn{
+    border:1px solid var(--bd);background:var(--bg);color:var(--tx-dim);
+    border-radius:var(--r-sm);width:24px;height:24px;display:grid;place-items:center;
+    cursor:pointer;font-size:12px;line-height:1;padding:0
+  }
+  .iconbtn:hover{background:var(--bg-hover);color:var(--tx)}
+  .iconbtn.spin{animation:sp .9s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  /* ---------- summary ---------- */
+  .sum{display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--bd);flex:0 0 auto;background:var(--bg)}
+  .chip{flex:1;text-align:center;background:var(--bg-soft);border:1px solid var(--bd);border-radius:var(--r-sm);padding:5px 4px}
+  .chip b{display:block;font-size:14px;font-weight:600;line-height:1.2}
+  .chip span{display:block;color:var(--tx-mute);font-size:var(--fs-xs);margin-top:1px}
+
+  /* ---------- alerts ---------- */
+  .alert{margin:8px 12px;padding:7px 9px;border-radius:var(--r-sm);font-size:var(--fs-sm);
+    border:1px solid #f3cfcb;background:#fdf1f0;color:#8b2b23}
+  .alert button{margin-top:6px;border:1px solid #e2b7b2;background:#fff;color:#8b2b23;
+    border-radius:5px;padding:3px 8px;cursor:pointer;font-size:var(--fs-xs)}
+  [hidden]{display:none !important}
+
+  /* ---------- list ---------- */
+  .list{flex:1 1 auto;overflow-y:auto;min-height:0;padding:6px}
+  .grp{margin-bottom:2px}
+  .grp-hd{
+    display:flex;align-items:center;gap:6px;width:100%;text-align:left;
+    border:0;background:transparent;color:var(--tx);font-size:var(--fs-sm);font-weight:600;
+    padding:6px 8px;border-radius:var(--r-sm);cursor:pointer
+  }
+  .grp-hd:hover{background:var(--bg-hover)}
+  .caret{color:var(--tx-mute);font-size:9px;width:9px;flex:0 0 auto;transition:transform .15s}
+  .grp.open .caret{transform:rotate(90deg)}
+  .grp-hd .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .st-dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto;background:var(--idle)}
+  .st-dot.on{background:var(--live)}
+  .cnt{color:var(--tx-mute);font-size:var(--fs-xs);font-weight:400}
+
+  .items{display:flex;flex-direction:column;gap:2px;padding:2px 0 4px 14px}
+  .item{
+    display:flex;align-items:flex-start;gap:7px;padding:6px 8px;border-radius:var(--r-sm);
+    cursor:pointer;border:1px solid transparent;min-width:0
+  }
+  .item:hover{background:var(--bg-hover)}
+  .item.sel{background:#eaf1ff;border-color:#c7dbff}
+  .item .bd{flex:1;min-width:0}
+  .item .t{font-size:var(--fs-sm);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .item.sel .t{color:#17428f;font-weight:600}
+  .item .st{color:var(--tx-dim);font-size:var(--fs-xs);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
+  .item .mt{display:flex;gap:5px;align-items:center;margin-top:3px;color:var(--tx-mute);font-size:var(--fs-xs)}
+  .tag{
+    border:1px solid var(--bd);background:var(--bg-soft);color:var(--tx-dim);
+    border-radius:4px;padding:0 4px;font-size:10px;line-height:15px;height:15px
+  }
+  .tag.ag{border-color:#cfe0d6;background:#e9f5ee;color:#2b7a4b}
+  .tag.ac{border-color:#f2dcae;background:#fdf5e3;color:#96620f}
+  .tag.tm{border-color:#d3dced;background:#eef2fb;color:#33539b}
+  .empty{padding:22px 14px;text-align:center;color:var(--tx-mute);font-size:var(--fs-sm);line-height:1.8}
+
+  /* ---------- embedded view ---------- */
+  .view{
+    flex:0 0 auto;display:flex;flex-direction:column;
+    border-top:1px solid var(--bd);background:var(--bg-soft)
+  }
+  .view-hd{display:flex;align-items:center;gap:6px;padding:6px 10px;flex:0 0 auto}
+  .view-hd .nm{flex:1;font-size:var(--fs-sm);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .view iframe{flex:1 1 auto;width:100%;border:0;background:#fff;min-height:0}
+  .grip{height:5px;cursor:row-resize;background:var(--bg-soft);flex:0 0 auto}
+  .grip:hover{background:#e6ecf6}
+
+  /* ---------- footer ---------- */
+  .ft{
+    display:flex;align-items:center;gap:8px;padding:6px 12px;border-top:1px solid var(--bd);
+    color:var(--tx-mute);font-size:var(--fs-xs);flex:0 0 auto;background:var(--bg)
+  }
+  .ft .sp{flex:1}
+  .ft a{color:var(--accent);text-decoration:none}
+  .ft a:hover{text-decoration:underline}
+  select{font-size:var(--fs-xs);border:1px solid var(--bd);border-radius:5px;padding:1px 3px;background:var(--bg);color:var(--tx-dim)}
+
+  /* embedded mode: tighter, no chrome */
+  body.embed .hd{padding:7px 10px}
+  body.embed .sum{padding:6px 10px}
+  body.embed .ft{padding:5px 10px}
+</style>
+</head>
+<body>
+<div class="sb" id="sb">
+
+  <div class="hd">
+    <span class="dot" id="connDot"></span>
+    <h1>SBP4AI</h1>
+    <span class="sub">tmux 会话监控</span>
+    <span class="sp"></span>
+    <button class="iconbtn" id="btnRefresh" title="立即刷新">⟳</button>
+    <button class="iconbtn" id="btnWide" title="在完整面板中打开">⧉</button>
+  </div>
+
+  <div class="sum">
+    <div class="chip"><b id="sTotal">–</b><span>会话</span></div>
+    <div class="chip"><b id="sTerm">–</b><span>终端</span></div>
+    <div class="chip"><b id="sLive">–</b><span>活跃</span></div>
+    <div class="chip"><b id="sAgent">–</b><span>智能体</span></div>
+  </div>
+
+  <div class="alert" id="alert" hidden>
+    <div id="alertMsg"></div>
+    <button id="alertRetry">重试</button>
+  </div>
+
+  <div class="list" id="list">
+    <div class="empty">正在加载会话…</div>
+  </div>
+
+  <div class="view" id="view" hidden style="height:320px">
+    <div class="grip" id="grip"></div>
+    <div class="view-hd">
+      <span class="nm" id="viewName"></span>
+      <button class="iconbtn" id="btnOpen" title="新窗口打开">↗</button>
+      <button class="iconbtn" id="btnClose" title="收起">✕</button>
+    </div>
+    <iframe id="frame" referrerpolicy="same-origin"></iframe>
+  </div>
+
+  <div class="ft">
+    <span id="ftState">初始化…</span>
+    <span class="sp"></span>
+    <select id="pollSel" title="轮询间隔">
+      <option value="3000">3s</option>
+      <option value="5000" selected>5s</option>
+      <option value="10000">10s</option>
+      <option value="0">手动</option>
+    </select>
+    <a href="/" target="_blank" rel="noopener">完整面板</a>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---- embed mode: ?embed=1 hides nothing here (layout already compact),
+         it mainly shrinks paddings; kept for future fine-tuning ---- */
+  var Q = new URLSearchParams(location.search);
+  if (Q.get("embed") === "1") document.body.classList.add("embed");
+
+  var INTERVAL = Number(Q.get("poll") || 5000);
+  var BASE = "";                     // same origin as the panel that serves this page
+  var API_INDEX = BASE + "/api/index";
+
+  var el = {
+    list: document.getElementById("list"),
+    view: document.getElementById("view"),
+    viewName: document.getElementById("viewName"),
+    frame: document.getElementById("frame"),
+    grip: document.getElementById("grip"),
+    connDot: document.getElementById("connDot"),
+    alert: document.getElementById("alert"),
+    alertMsg: document.getElementById("alertMsg"),
+    alertRetry: document.getElementById("alertRetry"),
+    ftState: document.getElementById("ftState"),
+    sTotal: document.getElementById("sTotal"),
+    sTerm: document.getElementById("sTerm"),
+    sLive: document.getElementById("sLive"),
+    sAgent: document.getElementById("sAgent"),
+    btnRefresh: document.getElementById("btnRefresh"),
+    btnWide: document.getElementById("btnWide"),
+    btnOpen: document.getElementById("btnOpen"),
+    btnClose: document.getElementById("btnClose"),
+    pollSel: document.getElementById("pollSel")
+  };
+
+  var state = { etag: null, index: null, selected: null, timer: null, busy: false };
+  var openGroups = {};
+
+  /* ---------------- helpers ---------------- */
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  // panel mixes second- and millisecond timestamps across sources -> normalize to ms
+  function toMs(t) {
+    if (!t) return 0;
+    t = Number(t);
+    if (!isFinite(t) || t <= 0) return 0;
+    return t < 1e11 ? t * 1000 : t;
+  }
+
+  function ago(t) {
+    var ms = toMs(t);
+    if (!ms) return "";
+    var d = Date.now() - ms;
+    if (d < 0) d = 0;
+    var s = Math.floor(d / 1000);
+    if (s < 60) return s + "s 前";
+    var m = Math.floor(s / 60);
+    if (m < 60) return m + "m 前";
+    var h = Math.floor(m / 60);
+    if (h < 24) return h + "h 前";
+    return Math.floor(h / 24) + "d 前";
+  }
+
+  function setAlert(msg) {
+    if (!msg) { el.alert.hidden = true; return; }
+    el.alertMsg.textContent = msg;
+    el.alert.hidden = false;
+  }
+
+  function setState(txt) { el.ftState.textContent = txt; }
+
+  /* ---------------- fetch index (ETag aware, saves server work) ---------------- */
+
+  function pollIndex() {
+    if (state.busy) return;
+    state.busy = true;
+    el.btnRefresh.classList.add("spin");
+
+    var headers = {};
+    if (state.etag) headers["If-None-Match"] = state.etag;
+
+    return fetch(API_INDEX, { headers: headers, credentials: "same-origin" })
+      .then(function (r) {
+        if (r.status === 304) {                 // unchanged: data already rendered
+          state.connDotHealth(true);
+          setState("已连接 · 无变化 (" + tsStr() + ")");
+          return null;
+        }
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        state.etag = r.headers.get("ETag") || state.etag;
+        return r.json();
+      })
+      .then(function (j) {
+        state.busy = false;
+        el.btnRefresh.classList.remove("spin");
+        state.connDotHealth(true);
+        if (!j) return;
+        if (!j.ok) throw new Error(j.error || "bad payload");
+        state.index = j;
+        setAlert("");
+        render();
+        setState("已连接 · " + tsStr());
+      })
+      .catch(function (e) {
+        state.busy = false;
+        el.btnRefresh.classList.remove("spin");
+        state.connDotHealth(false);
+        setAlert("无法读取 " + API_INDEX + "：" + (e && e.message ? e.message : e));
+        render();                              // still render last known / empty state
+      });
+  }
+
+  state.connDotHealth = function (ok) {
+    el.connDot.classList.toggle("bad", !ok);
+  };
+
+  function tsStr() {
+    var d = new Date();
+    function p(n) { return n < 10 ? "0" + n : "" + n; }
+    return p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
+  }
+
+  /* ---------------- render ---------------- */
+
+  function flatten(groups) {
+    // each tmux session may carry several transcript items -> expose every one of them
+    var out = [];
+    (groups || []).forEach(function (g) {
+      (g.items || []).forEach(function (it) {
+        out.push({ group: g, item: it });
+      });
+      if (!(g.items || []).length) out.push({ group: g, item: null });
+    });
+    return out;
+  }
+
+  function render() {
+    var groups = (state.index && state.index.groups) || [];
+    var rows = flatten(groups);
+
+    // ---- summary ----
+    var termCount = 0, liveGroups = 0, agents = {};
+    groups.forEach(function (g) {
+      termCount += (g.items || []).length;
+      if (g.live) liveGroups++;
+      (g.items || []).forEach(function (it) {
+        var a = it.agent || it.kind || "";
+        if (a) agents[a] = 1;
+      });
+    });
+    el.sTotal.textContent = groups.length;
+    el.sTerm.textContent = termCount;
+    el.sLive.textContent = liveGroups;
+    el.sAgent.textContent = Object.keys(agents).length;
+
+    // ---- empty ----
+    if (!rows.length) {
+      el.list.innerHTML = '<div class="empty">没有检测到 tmux 会话。<br>先在终端里 <code>tmux new -s 名字</code> 起一个吧。</div>';
+      return;
+    }
+
+    // ---- group -> items ----
+    var html = "";
+    groups.forEach(function (g) {
+      var open = openGroups.hasOwnProperty(g.name) ? openGroups[g.name] : true;
+      var items = g.items || [];
+      html += '<div class="grp' + (open ? " open" : "") + '" data-g="' + esc(g.name) + '">';
+      html += '<button class="grp-hd" type="button">'
+        + '<span class="caret">▶</span>'
+        + '<span class="st-dot' + (g.live ? " on" : "") + '" title="' + (g.live ? "live" : "idle") + '"></span>'
+        + '<span class="nm">' + esc(g.name) + '</span>'
+        + '<span class="cnt">' + items.length + '</span>'
+        + '</button>';
+      if (open) {
+        html += '<div class="items">';
+        if (!items.length) {
+          html += '<div class="item" style="cursor:default"><div class="bd">'
+            + '<div class="st">该会话没有可读的会话记录</div></div></div>';
+        }
+        items.forEach(function (it) {
+          var sel = state.selected === it.sid ? " sel" : "";
+          var tags = "";
+          if (it.agent) tags += '<span class="tag ag">' + esc(it.agent) + "</span>";
+          if (it.kind) tags += '<span class="tag tm">' + esc(it.kind) + "</span>";
+          if (it.active) tags += '<span class="tag ac">active</span>';
+          var meta = [];
+          if (it.count) meta.push(it.count + " 条");
+          var a = ago(it.updated_at);
+          if (a) meta.push(a);
+          html += '<div class="item' + sel + '" data-sid="' + esc(it.sid) + '" data-g="' + esc(g.name) + '">'
+            + '<span class="st-dot' + (it.active ? " on" : "") + '"></span>'
+            + '<div class="bd">'
+            + '<div class="t">' + esc(it.title || it.short || it.sid) + "</div>"
+            + (it.subtitle ? '<div class="st">' + esc(it.subtitle) + "</div>" : "")
+            + '<div class="mt">' + tags + (meta.length ? '<span>' + esc(meta.join(" · ")) + "</span>" : "") + "</div>"
+            + "</div></div>";
+        });
+        html += "</div>";
+      }
+      html += "</div>";
+    });
+    el.list.innerHTML = html;
+  }
+
+  /* ---------------- interaction ---------------- */
+
+  el.list.addEventListener("click", function (e) {
+    var hd = e.target.closest(".grp-hd");
+    if (hd) {
+      var g = hd.closest(".grp").getAttribute("data-g");
+      openGroups[g] = !openGroups[g];
+      render();
+      return;
+    }
+    var it = e.target.closest(".item[data-sid]");
+    if (!it) return;
+    select(it.getAttribute("data-sid"));
+  });
+
+  function find(sid) {
+    var found = null;
+    ((state.index && state.index.groups) || []).forEach(function (g) {
+      (g.items || []).forEach(function (i) { if (i.sid === sid) found = i; });
+    });
+    return found;
+  }
+
+  function select(sid) {
+    state.selected = sid;
+    render();
+    var it = find(sid);
+    el.viewName.textContent = it ? (it.title || it.short || it.sid) : sid;
+    // panel opens a specific transcript through its own hash route
+    el.frame.src = BASE + "/#s=" + encodeURIComponent(sid);
+    el.view.hidden = false;
+    el.btnWide.dataset.sid = sid;
+  }
+
+  el.btnClose.addEventListener("click", function () {
+    el.view.hidden = true;
+    el.frame.src = "about:blank";
+    state.selected = null;
+    render();
+  });
+
+  el.btnOpen.addEventListener("click", function () {
+    if (state.selected) window.open(BASE + "/#s=" + encodeURIComponent(state.selected), "_blank", "noopener");
+  });
+
+  el.btnWide.addEventListener("click", function () {
+    var u = BASE + "/";
+    if (state.selected) u += "#s=" + encodeURIComponent(state.selected);
+    window.open(u, "_blank", "noopener");
+  });
+
+  el.btnRefresh.addEventListener("click", pollIndex);
+  el.alertRetry.addEventListener("click", pollIndex);
+
+  el.pollSel.addEventListener("change", function () {
+    INTERVAL = Number(el.pollSel.value);
+    schedule();
+  });
+
+  // resize the embedded view by dragging the grip
+  (function () {
+    var dragging = false, startY = 0, startH = 0;
+    el.grip.addEventListener("mousedown", function (e) {
+      dragging = true; startY = e.clientY; startH = el.view.offsetHeight;
+      e.preventDefault();
+    });
+    window.addEventListener("mousemove", function (e) {
+      if (!dragging) return;
+      var h = Math.max(120, Math.min(window.innerHeight - 200, startH + (startY - e.clientY)));
+      el.view.style.height = h + "px";
+    });
+    window.addEventListener("mouseup", function () { dragging = false; });
+  })();
+
+  /* ---------------- polling loop ---------------- */
+
+  function schedule() {
+    if (state.timer) clearInterval(state.timer);
+    state.timer = null;
+    if (INTERVAL > 0) state.timer = setInterval(pollIndex, INTERVAL);
+    setState(INTERVAL > 0 ? ("已连接 · 每 " + INTERVAL / 1000 + "s 轮询") : "手动刷新模式");
+  }
+
+  // do not poll while hidden: keeps both CPU and server load down
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) {
+      if (state.timer) { clearInterval(state.timer); state.timer = null; }
+    } else {
+      pollIndex();
+      schedule();
+    }
+  });
+
+  pollIndex();
+  schedule();
+})();
+</script>
+</body>
+</html>
