@@ -13,7 +13,7 @@ from pathlib import Path
 
 import aiohttp
 
-from .adapters import Adapter, load_dir, pick
+from .adapters import Adapter, load_dir, load_dirs, pick
 from .screen import Screen
 from .source import PtySource, TmuxSource
 from . import prompt as promptmod
@@ -22,7 +22,45 @@ VERSION = "sbp/0.1"
 SUB_PROTO = "sbp.v0.1"
 STATE_DIR = Path(os.environ.get("SBP_HOME") or (Path.home() / ".sbp"))
 REPO = Path(__file__).resolve().parents[2]
-ADAPTER_DIR = REPO / "spec" / "adapters"
+
+
+def _candidate_adapter_dirs() -> list[Path]:
+    """adapter 的搜索路径（按优先级）。
+
+    仓库拆成 6 个子仓之前，adapter 就在本仓的 spec/adapters 下；拆完之后
+    adapter 归 sbp-spec 所有。这里按顺序找四处，保证两种布局都能跑：
+
+      1. $SBP_ADAPTER_DIR（os.pathsep 分隔，可多个）——显式指定，最高优先级
+      2. 本仓自带的 <repo>/spec/adapters（单体布局或随包发布）
+      3. ~/.sbp/adapters（用户自己加的，不放 Git）
+      4. 同级仓库 ../sbp-spec/spec/adapters（子仓布局，spec 是唯一事实来源）
+    """
+    cands: list[Path] = []
+    raw = os.environ.get("SBP_ADAPTER_DIR", "")
+    if raw:
+        cands += [Path(p) for p in raw.split(os.pathsep) if p]
+    cands += [
+        REPO / "spec" / "adapters",
+        Path.home() / ".sbp" / "adapters",
+        REPO.parent / "sbp-spec" / "spec" / "adapters",
+    ]
+    out: list[Path] = []
+    seen: set[Path] = set()
+    for d in cands:
+        try:
+            rd = d.resolve()
+        except OSError:
+            continue
+        if rd in seen or not rd.is_dir():
+            continue
+        seen.add(rd)
+        out.append(rd)
+    return out
+
+
+ADAPTER_DIRS = _candidate_adapter_dirs()
+# 保留旧变量名，避免别处 import 它时炸掉；指向最高优先级那个目录。
+ADAPTER_DIR = ADAPTER_DIRS[0] if ADAPTER_DIRS else (REPO / "spec" / "adapters")
 
 
 def now_ms() -> int:
@@ -368,5 +406,5 @@ class Bridge:
 
 
 def default_adapter(cmd: list[str], explicit: str | None) -> Adapter:
-    adapters = load_dir(ADAPTER_DIR)
+    adapters = load_dirs(ADAPTER_DIRS)
     return pick(adapters, cmd[0] if cmd else "sh", explicit)

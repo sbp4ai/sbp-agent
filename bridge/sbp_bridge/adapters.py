@@ -118,6 +118,47 @@ def load_dir(path: str | Path) -> list[Adapter]:
     return out
 
 
+def load_dirs(paths) -> list[Adapter]:
+    """按顺序合并多个 adapter 目录，同名只认第一次出现的（前者优先）。
+
+    用于「本仓自带 + 同级 sbp-spec 仓」共存时避免同名 adapter 打架。
+    """
+    out: list[Adapter] = []
+    seen: set[str] = set()
+    for p in paths:
+        for a in load_dir(p):
+            if a.name in seen:
+                continue
+            seen.add(a.name)
+            out.append(a)
+    return out
+
+
+# 一个 adapter 都没找到时的兜底：等价于 spec/adapters/generic.yaml。
+# 没有它，pick() 对空列表会抛 IndexError（仓库拆分后最常见的炸法）。
+_GENERIC_FALLBACK: dict = {
+    "adapter": "generic@0",
+    "agent": "generic",
+    "display": "Generic Terminal",
+    "match": {},
+    "transport": {
+        "type": "pty",
+        "shell": ["{{shell}}", "-i"],
+        "capture": {"mode": "screen", "rows": 40, "cols": 100, "interval_ms": 600},
+        "env": {"TERM": "xterm-256color"},
+    },
+    "state": {"busy": {"regex": "(?!)"}, "idle": {"regex": ".*"}, "waiting": {"regex": "(?!)"}},
+    "semantics": {
+        "input.text": {"write": "{{text}}", "submit": "\r"},
+        "input.key": {"keys": {"ENTER": "\r", "ESC": "\u001b"}},
+        "input.choice": {"unsupported": True},
+        "input.approve": {"unsupported": True},
+        "input.interrupt": {"write": "\u0003"},
+    },
+    "caps": ["input.text", "input.key", "input.interrupt", "output.screen"],
+}
+
+
 def pick(adapters: list[Adapter], cmd: str, explicit: str | None = None) -> Adapter:
     if explicit:
         for a in adapters:
@@ -126,4 +167,8 @@ def pick(adapters: list[Adapter], cmd: str, explicit: str | None = None) -> Adap
     scored = sorted(((a.score(cmd), a) for a in adapters), key=lambda t: t[0], reverse=True)
     if scored and scored[0][0] > 0:
         return scored[0][1]
-    return next((a for a in adapters if a.agent == "generic"), adapters[-1])
+    fallback = next((a for a in adapters if a.agent == "generic"), None)
+    if fallback is not None:
+        return fallback
+    # 列表为空（adapter 目录缺失/没装 yaml）时也不能崩，退化成内置 generic。
+    return Adapter(dict(_GENERIC_FALLBACK))
