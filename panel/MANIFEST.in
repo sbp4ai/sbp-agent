@@ -1,0 +1,8 @@
+include README.md
+include requirements.txt
+include pyproject.toml
+exclude .env
+prune tests
+prune docs
+global-exclude *.pyc __pycache__
+global-exclude .env

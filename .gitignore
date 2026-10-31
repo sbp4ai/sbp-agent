@@ -5,6 +5,10 @@ __pycache__/
 .venv/
 venv/
 
+# Build artifacts (wheel/sdist) — keep locally, never commit
+dist/
+build/
+
 # OS
 .DS_Store
 

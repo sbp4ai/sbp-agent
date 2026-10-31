@@ -52,7 +52,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--port", "-p", type=int, default=int(os.getenv("PORT", DEFAULT_PORT)))
     ap.add_argument("--host", "-H", default=os.getenv("HOST", DEFAULT_HOST))
     ap.add_argument("--no-auth", action="store_true", help="关闭登录（仅本机调试）")
-    ap.add_argument("--version", action="version", version="tmux-claude-panel 0.1.0")
+    ap.add_argument("--version", action="version", version="tmux-ai-coder-panel 1.0.4")
     args = ap.parse_args(argv)
 
     acc, pwd, created = ensure_env()

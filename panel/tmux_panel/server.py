@@ -32,7 +32,24 @@ from .tmux import Tmux
 
 VERSION = "sbp/0.1"
 PROMPT_VER = "sbp/0.2"
-WEB_DIR = Path(__file__).resolve().parents[1] / "web"
+
+# web/ 在开发时位于 tmux_panel/web（与 server.py 同包），打包安装后需用 importlib.resources
+# 取出。两者都试，保证开发态与 wheel 安装态都能找到静态目录。
+def _resolve_web_dir() -> Path:
+    here = Path(__file__).resolve().parent
+    local = here / "web"
+    if local.is_dir():
+        return local
+    try:
+        from importlib.resources import files as _files
+        cand = _files("tmux_panel") / "web"
+        if cand.is_dir():
+            return Path(str(cand))
+    except Exception:
+        pass
+    return local
+
+WEB_DIR = _resolve_web_dir()
 
 load_dotenv(os.path.join(os.getcwd(), ".env"))
 ACCOUNT = os.getenv("PANEL_ACCOUNT", "")
