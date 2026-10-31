@@ -353,7 +353,7 @@
         items.forEach(function (it) {
           var sel = state.selected === it.sid ? " sel" : "";
           var tags = "";
-          if (it.agent) tags += '<span class="tag ag">' + esc(it.agent) + "</span>";
+          if (it.agent) tags += '<span class="tag ag">' + esc(it.agent_display || it.agent) + "</span>";
           if (it.kind) tags += '<span class="tag tm">' + esc(it.kind) + "</span>";
           if (it.active) tags += '<span class="tag ac">active</span>';
           var meta = [];

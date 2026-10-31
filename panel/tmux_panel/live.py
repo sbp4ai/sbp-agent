@@ -19,10 +19,54 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import sys
 import time
 from pathlib import Path
 
 from . import claude
+
+# ------------------------------------------------------------------ 统一适配器声明
+# SBP 是多种 CLI 的统一会话协议：每种 agent 的识别（命令名）与展示名都声明在
+# sbp-spec/spec/adapters/*.yaml 里。这里把它们加载进来，作为 agent 识别的唯一真相源，
+# 避免 panel 与 bridge 各维护一份硬编码列表（改了 adapter 忘了改这里就会“只认 claude”）。
+try:
+    _BRIDGE = Path(__file__).resolve().parents[2] / "bridge"
+    if str(_BRIDGE) not in sys.path:
+        sys.path.insert(0, str(_BRIDGE))
+    from sbp_bridge.adapters import load_dirs          # noqa: E402
+    from sbp_bridge.client import ADAPTER_DIRS         # noqa: E402
+    _ADAPTERS = load_dirs(ADAPTER_DIRS)
+    CMD_TO_AGENT: dict[str, str] = {}
+    AGENT_DISPLAY: dict[str, str] = {}
+    for _a in _ADAPTERS:
+        for _c in (_a.data.get("match") or {}).get("cmd") or []:
+            CMD_TO_AGENT.setdefault(_c, _a.agent)
+        AGENT_DISPLAY[_a.agent] = _a.data.get("display", _a.agent)
+    _ADAPTER_OK = True
+except Exception:                                      # bridge 不在 / 没装 yaml：退回内置清单
+    _ADAPTER_OK = False
+    CMD_TO_AGENT = {}
+    AGENT_DISPLAY = {}
+
+if not CMD_TO_AGENT:                                   # 兜底：保证至少认识最常见的几种
+    CMD_TO_AGENT = {
+        "claude": "claude-code", "claude-code": "claude-code",
+        "qwen": "qwen-code", "qwen-code": "qwen-code", "qodercli": "qodercli", "qoder": "qodercli",
+        "codex": "codex", "dsh": "dsh", "dsh-agent": "dsh",
+        "aider": "aider", "opencode": "opencode",
+        "hermes": "hermes", "openclaw": "openclaw", "workbuddy": "workbuddy",
+    }
+    AGENT_DISPLAY = {
+        "claude-code": "Claude Code", "qwen-code": "Qwen Code", "qodercli": "Qoder CLI",
+        "codex": "OpenAI Codex", "dsh": "DSH Agent", "aider": "Aider", "opencode": "OpenCode",
+        "hermes": "Hermes", "openclaw": "OpenClaw", "workbuddy": "WorkBuddy",
+    }
+
+
+def display_of(agent_id: str) -> str:
+    """agent id（如 claude-code）-> 展示名（如 Claude Code）。"""
+    return AGENT_DISPLAY.get(agent_id, (agent_id or "").replace("-", " ").title())
+
 
 ACTIVE_TTL = 180.0      # jsonl 在这么多秒内被写过，就算「刚活跃」
 _PS_TTL = 2.0           # ps 快照缓存
@@ -32,16 +76,14 @@ _ps_cache: tuple[float, dict] = (0.0, {})
 _fd_cache: dict[int, tuple[float, list]] = {}
 _cmd_cache: dict[int, tuple[float, str]] = {}
 
-# tmux pane 里跑这些命令，说明里面是个 agent
-AGENT_CMD_HINTS = {"claude", "dsh", "codex", "aider", "gemini", "opencode", "crush",
-                   "amp", "goose", "cline", "kimi", "qwen", "hermes"}
 # 解释器/壳不算证据，否则每个终端都会被当成 agent
 _WEAK = {"node", "bun", "bash", "sh", "zsh", "fish", "python", "python3", ""}
 
 
 def agent_of(tokens: list[str]) -> str:
-    """从一串命令 token 里认出 agent 名；认不出返回 ''。
+    """从一串命令 token 里认出 agent id（如 claude-code / qwen-code / aider）；认不出返回 ''。
 
+    识别依据全部来自 sbp-spec/spec/adapters/*.yaml 的 match.cmd（见文件顶部加载逻辑）。
     dsh 这类 agent 常常是个 shell 脚本，tmux 的 pane_current_command 只显示
     解释器（bash），必须看启动命令行 / ps 的完整命令行才知道里面跑的是谁。
     """
@@ -49,11 +91,11 @@ def agent_of(tokens: list[str]) -> str:
         b = os.path.basename((t or "").strip().strip('"').lower())
         if b in _WEAK or not b:
             continue
-        if b in AGENT_CMD_HINTS:
-            return b
-        for hint in ("claude", "dsh", "codex", "aider", "gemini", "opencode", "crush"):
+        if b in CMD_TO_AGENT:                       # 精确命中优先
+            return CMD_TO_AGENT[b]
+        for hint in CMD_TO_AGENT:                   # 前缀命中（claude-code-foo 之类）
             if b.startswith(hint):
-                return hint
+                return CMD_TO_AGENT[hint]
     return ""
 
 

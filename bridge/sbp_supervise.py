@@ -55,10 +55,22 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "default_adapter": "tmux@1",
     # 按 pane 里跑的命令名换成专属 adapter（仅当该 adapter 是 tmux 传输）
     "auto_detect_adapter": True,
+    # 统一适配器声明入口：命令名 -> spec/adapters/*.yaml 里的 adapter 名。
+    # 新增一种 CLI 时，先在 sbp-spec/spec/adapters 加一份声明，再在这里登记命令名即可。
     "agent_adapters": {
         "claude": "claude-code@1",
         "qwen": "qwen-code@1",
         "qwen-code": "qwen-code@1",
+        "qodercli": "qodercli@1",
+        "qoder": "qodercli@1",
+        "codex": "codex@1",
+        "dsh": "dsh@2",
+        "dsh-agent": "dsh@2",
+        "aider": "aider@1",
+        "opencode": "opencode@1",
+        "hermes": "hermes@1",
+        "openclaw": "openclaw@1",
+        "workbuddy": "workbuddy@1",
     },
     "exclude": [],   # 会话名正则，命中即跳过
     "include": [],   # 非空则只监控命中的会话名

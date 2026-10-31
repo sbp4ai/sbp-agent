@@ -102,6 +102,24 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title="tmux-claude-panel", version="0.1.0", lifespan=lifespan)
 
 
+# ------------------------------------------------------------------ CORS
+# 让千问办公（QwenWork）侧边栏里的 qwapp、以及任何跨源前端都能调本地 panel API。
+# 本地单机的 localhost 服务，* 足够；若要收紧可改成具体的源列表。
+@app.middleware("http")
+async def _cors(request: Request, call_next):
+    if request.method == "OPTIONS":
+        return Response(status_code=204, headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+        })
+    resp = await call_next(request)
+    resp.headers.setdefault("Access-Control-Allow-Origin", "*")
+    resp.headers.setdefault("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+    resp.headers.setdefault("Access-Control-Allow-Headers", "*")
+    return resp
+
+
 # ---------------------------------------------------------------- auth
 def _sign(s: str) -> str:
     return hmac.new(SECRET, s.encode(), hashlib.sha256).hexdigest()

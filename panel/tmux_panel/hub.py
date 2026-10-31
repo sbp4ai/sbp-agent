@@ -70,6 +70,7 @@ def _slim(it: dict) -> dict:
         "branch": it["branch"], "tmux": it.get("tmux", ""),
         "kind": it.get("kind", "claude"),
         "agent": it.get("agent", "claude-code"),
+        "agent_display": live.display_of(it.get("agent", "claude-code")),
         # 侧栏配色：True = 这个 tmux 里当前挂着它的那个会话（深色）
         "active": bool(it.get("active")),
     }
@@ -115,7 +116,7 @@ def build_index() -> dict:
         # 有没有 claude 真的在跑：dsh 在跑不代表 claude 在跑，别把 claude 会话点亮
         pids = [int(p["pid"]) for p in panes if str(p.get("pid") or "").isdigit()]
         held = live.held_sids(pids) if pids else set()
-        claude_live = bool(held) or any(ra == "claude" for _, _, ra in pane_state)
+        claude_live = bool(held) or any(ra == "claude-code" for _, _, ra in pane_state)
 
         # 每个挂着 agent 的 pane，只要没被上面的 claude 列表覆盖，就列成终端会话
         # （dsh / codex / aider 这些没有 jsonl，只有一条实时屏幕）
@@ -124,17 +125,18 @@ def build_index() -> dict:
             ag = ra or sa
             if not ag:
                 continue                      # 纯 shell 的 pane 不列
-            if ag == "claude" and items and (p.get("cwd") or "") == cwd:
+            if ag == "claude-code" and items and (p.get("cwd") or "") == cwd:
                 continue                      # 已经在上面的 claude 会话列表里
             pane_id = p.get("pane_id") or ""
             # 单 pane 保持老 id（term:<tmux>），多 pane 才加后缀，别动已有客户端
             sid = f"term:{s['name']}" if n_term == 0 else f"term:{s['name']}#{pane_id}"
             n_term += 1
-            sub = f"终端 · {ag}"
+            disp = live.display_of(ag)
+            sub = disp
             if ra:
                 t = _screen_title(pane_id)
                 if t:
-                    sub = f"{ag} · {t}"
+                    sub = f"{disp} · {t}"
             tinfo = {
                 "sid": sid,
                 "short": (s["name"] if n_term == 1 else f"{s['name']}/{pane_id.lstrip('%')}")[:8],
@@ -160,7 +162,7 @@ def build_index() -> dict:
             it["active"] = (it["sid"] == act)
         if act:
             # 进程抱着 jsonl 但命令行没被认出来（自定义包装脚本等）：组头也点亮
-            agent = agent or "claude"
+            agent = agent or "claude-code"
 
         groups_items = [_slim(x) for x in items]
         covered_cwd.add(cwd)
