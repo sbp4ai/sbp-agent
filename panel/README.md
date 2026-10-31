@@ -90,6 +90,9 @@ agent 已退出（pane 只剩 shell）→ 灰色 + `未激活` 角标，但仍�
 
 ## 协议（SBP v0.1 子集）
 
+完整协议规范（角色 / 帧 / 消息表 / 懒加载 / 安全 / 演进 + 多 agent 适配器映射）见
+**[sbp-spec 仓库](https://github.com/sbp4ai/sbp-spec)**。
+
 信封与 `spec/SBP-0.1.md` 一致，`WS /ws`：
 
 ```jsonc
