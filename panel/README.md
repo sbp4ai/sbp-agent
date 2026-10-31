@@ -152,3 +152,13 @@ panel/
     ├── style.css
     └── app.js
 ```
+
+## 更新日志
+
+- **1.0.6** — 修复 Linux 下 `/api/index` 返回 500：进程树遍历里
+  `stack.extend(kids.get(cur))` 在节点没有子进程时拿到 `None` 会抛
+  `TypeError: 'NoneType' object is not iterable`（`live.py::_tree`）。
+  已改为 `extend(... or [])`。
+- **1.0.5** — PyPI 描述与仓库互链（[sbp-spec](https://github.com/sbp4ai/sbp-spec)）。
+- **1.0.4** — 统一适配器声明（aider / opencode / qodercli），多 CLI 识别以
+  `sbp-spec/spec/adapters/*.yaml` 为唯一真相源；新增 CORS 与 `SBP4AI` 品牌。

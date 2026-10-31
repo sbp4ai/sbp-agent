@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tmux-ai-coder-panel"
-version = "1.0.5"
+version = "1.0.6"
 description = "tmux + 多 CLI 会话本地面板（Claude Code / Qwen Code / Codex / Aider / OpenCode / Qoder / dsh 等），SBP4AI 统一适配器识别。左侧 tmux 会话树，右侧懒加载会话流 + 历史。"
 readme = "README.md"
 requires-python = ">=3.9"

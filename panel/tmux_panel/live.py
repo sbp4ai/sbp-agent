@@ -180,7 +180,8 @@ def _tree(roots: list[int]) -> list[int]:
             continue
         seen.add(cur)
         out.append(cur)
-        stack.extend(kids.get(cur) if m else _kids_of(cur))
+        # kids.get(cur) 在无子进程时是 None，extend(None) 会抛 TypeError
+        stack.extend((kids.get(cur) if m else _kids_of(cur)) or [])
     return out
 
 
