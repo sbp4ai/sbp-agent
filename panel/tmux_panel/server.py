@@ -110,10 +110,20 @@ hub = Hub()
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     task = asyncio.create_task(hub.tick_loop())
+    # --bridge / SBP_BRIDGE：把本机会话上报到本机 sbp-server，让「一个客户端看 N 台
+    # 机器」成为可能。没配就是普通面板，一行代码都不跑。
+    bridge_task = None
+    try:
+        from .bridge import start_bridge
+        bridge_task = start_bridge(hub, os.getenv("SBP_BRIDGE", ""))
+    except Exception as e:  # pragma: no cover - 缺 aiohttp 之类不该让面板起不来
+        print(f"  [bridge] 未启动：{e}", file=sys.stderr, flush=True)
     try:
         yield
     finally:
         task.cancel()
+        if bridge_task:
+            bridge_task.cancel()
 
 
 app = FastAPI(title="tmux-claude-panel", version="0.1.0", lifespan=lifespan)

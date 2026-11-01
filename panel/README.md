@@ -169,6 +169,10 @@ panel/
   现在面板自查 `PANEL_BASE` 环境变量或反代下发的 `X-Forwarded-Prefix` 请求头，
   把前缀注入页面（`window.__PANEL_BASE__`），`app.js` / `sidebar.html` / `qwapp.html`
   一律按前缀拼 URL。直接跑在站点根时行为不变。
+- **1.0.9** — 新增 `--bridge` / `SBP_BRIDGE`：面板作为 device 上报到本机
+  sbp-server，配合 [sbp-console](https://github.com/sbp4ai/sbp-console) 实现
+  「一个客户端 + 下拉切 N 台机器」。历史由面板现场回答，屏幕/选项卡/输入全部经
+  SBP 转发。依赖 aiohttp 收在 `bridge` extra 里。
 - **1.0.6** — 修复 Linux 下 `/api/index` 返回 500：进程树遍历里
   `stack.extend(kids.get(cur))` 在节点没有子进程时拿到 `None` 会抛
   `TypeError: 'NoneType' object is not iterable`（`live.py::_tree`）。
@@ -192,6 +196,36 @@ history:
 ```
 
 没写这段的 agent 保持原样：只用实时屏幕（`kind: term`），不会误伤。
+
+## 一个客户端看 N 台机器：`--bridge`
+
+面板原本只服务本机浏览器：每台机器一个网址，切一次换一次登录态。
+加上 `--bridge` 后，面板把自己注册成 sbp-server 上的一台 **device**，把本机
+tmux / Claude / Qwen Code 会话报上去：
+
+```bash
+python -m tmux_panel --bridge ws://127.0.0.1:8787/ws   # 或环境变量 SBP_BRIDGE
+# systemd:
+#   Environment=SBP_BRIDGE=ws://127.0.0.1:8787/ws
+```
+
+于是客户端（[sbp-console](https://github.com/sbp4ai/sbp-console) 网页、微信小程序）
+只要配「服务器地址 + HMAC 签名」，就能在下拉里切机器。面板**只往外连**，
+本机不需要对外开放新端口；要不要把 sbp-server 暴露到公网由 nginx 决定。
+
+bridge 这条路上报/响应的帧：
+
+| 方向 | 帧 |
+|---|---|
+| 出 | `session.index`（索引变了才推）、`output.delta`（屏幕）、`session.prompt`（SBP-0.2 选项卡）、`session.message`、`session.state` |
+| 入 | `session.attach` / `detach` / `history` / `input` / `answer`、`pane.snapshot`、`session.subtitle` |
+
+历史是**面板现场读 CLI 的 jsonl** 回答的（`session.history` 转发到设备），
+所以客户端翻到的内容与在本机面板里看到的完全一致；sbp-server 自己那份 jsonl
+只在设备离线时兜底。
+
+依赖：`--bridge` 需要 aiohttp（`pip install "tmux-ai-coder-panel[bridge]"`）。
+没配 `--bridge` 时面板行为与之前完全一样，一行 bridge 代码都不跑。
 
 ## 挂在反代子路径下（nginx）
 

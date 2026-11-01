@@ -52,8 +52,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--port", "-p", type=int, default=int(os.getenv("PORT", DEFAULT_PORT)))
     ap.add_argument("--host", "-H", default=os.getenv("HOST", DEFAULT_HOST))
     ap.add_argument("--no-auth", action="store_true", help="关闭登录（仅本机调试）")
-    ap.add_argument("--version", action="version", version="tmux-ai-coder-panel 1.0.4")
+    ap.add_argument("--bridge", default=os.getenv("SBP_BRIDGE", ""), metavar="WS_URL",
+                    help="把本机会话上报到 sbp-server，例如 ws://127.0.0.1:8787/ws"
+                         "（也可设环境变量 SBP_BRIDGE）。配了它，客户端就能通过那台"
+                         "服务器看到本机，而本机不用对外开放任何端口。")
+    ap.add_argument("--version", action="version", version="tmux-ai-coder-panel 1.0.9")
     args = ap.parse_args(argv)
+    if args.bridge:
+        os.environ["SBP_BRIDGE"] = args.bridge
 
     acc, pwd, created = ensure_env()
     if args.no_auth:
@@ -82,6 +88,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  账号:      {acc}   （见 .env）")
     else:
         print("  登录:      已关闭（--no-auth）")
+    if args.bridge:
+        print(f"  上报:      {args.bridge}")
     print("  Ctrl+C 停止")
     print("=" * 62)
 
