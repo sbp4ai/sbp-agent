@@ -21,6 +21,8 @@ ANNO_FILE = STATE_DIR / "annotations.json"
 
 TAIL_BYTES = 192 * 1024
 MAX_TEXT = 6000
+# 一页最多往回扫多少行（qwen 的 system 记录很多，但别把大文件整个扫一遍）
+PAGE_SCAN_MAX = 800
 SKIP_TYPES = {"mode", "permission-mode", "file-history-snapshot", "queue-operation", "attachment"}
 
 
@@ -132,6 +134,55 @@ def _text_of(content) -> tuple[str, list[str]]:
     return "\n\n".join(p for p in parts if p), tools
 
 
+def _parts_to_blocks(parts) -> list[dict]:
+    """Gemini / Qwen Code 的 message.parts -> claude 风格的 content blocks。
+
+    claude 用 ``message.content = [{type: text|thinking|tool_use|tool_result}]``，
+    qwen code（Gemini CLI 系的 fork）用 ``message.parts = [{text}, {functionCall},
+    {functionResponse}]``。这里做一次归一，后面的渲染逻辑就不用分叉了。
+    """
+    blocks: list[dict] = []
+    if not isinstance(parts, list):
+        return blocks
+    for p in parts:
+        if not isinstance(p, dict):
+            continue
+        if "text" in p:
+            blocks.append({"type": "text", "text": p.get("text") or ""})
+            continue
+        if "functionCall" in p:
+            fc = p.get("functionCall") or {}
+            blocks.append({"type": "tool_use", "name": fc.get("name") or "tool",
+                           "input": fc.get("args") or {}})
+            continue
+        if "functionResponse" in p:
+            fr = p.get("functionResponse") or {}
+            body = fr.get("response") or {}
+            if isinstance(body, dict):
+                # {"output": "..."} / {"content": [...]} 两种都见过
+                txt = body.get("output") or body.get("content") or body.get("error") or ""
+                if not isinstance(txt, str):
+                    txt = json.dumps(txt, ensure_ascii=False)
+            else:
+                txt = str(body)
+            blocks.append({"type": "tool_result", "content": [{"type": "text", "text": txt}]})
+            continue
+        if "inlineData" in p or "fileData" in p:
+            blocks.append({"type": "image"})
+    return blocks
+
+
+def _content_of(msg: dict):
+    """取正文：claude 的 content，或 qwen/gemini 的 parts（归一成 blocks）。"""
+    c = msg.get("content")
+    if c is not None:
+        return c
+    parts = msg.get("parts")
+    if parts:
+        return _parts_to_blocks(parts)
+    return c
+
+
 def normalize(rec: dict, seq: int) -> Optional[dict]:
     """jsonl 记录 -> 前端可渲染的消息。返回 None 表示这条不展示。"""
     typ = rec.get("type")
@@ -140,7 +191,7 @@ def normalize(rec: dict, seq: int) -> Optional[dict]:
     if rec.get("isSidechain"):
         return None
     msg = rec.get("message") or {}
-    content = msg.get("content")
+    content = _content_of(msg)
     text, tools = _text_of(content)
     if not text:
         return None
@@ -161,7 +212,8 @@ def normalize(rec: dict, seq: int) -> Optional[dict]:
 # ------------------------------------------------------------------ index entry
 def _tail_meta(path: str) -> dict:
     """只读文件尾部，拿到 aiTitle / lastPrompt / 最后一条消息摘要。"""
-    meta = {"ai_title": "", "last_prompt": "", "preview": "", "model": "", "branch": "", "cwd": ""}
+    meta = {"ai_title": "", "last_prompt": "", "preview": "", "model": "", "branch": "", "cwd": "",
+            "first_prompt": ""}
     try:
         size = os.path.getsize(path)
         with open(path, "rb") as fh:
@@ -171,6 +223,20 @@ def _tail_meta(path: str) -> dict:
             blob = fh.read().decode("utf-8", "replace")
     except OSError:
         return meta
+    # qwen code 没有 ai-title / last-prompt 这类记录，标题只能取第一条用户消息
+    for line in blob.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except Exception:
+            continue
+        if rec.get("type") == "user" and not rec.get("isSidechain"):
+            txt, _ = _text_of(_content_of(rec.get("message") or {}))
+            if txt.strip():
+                meta["first_prompt"] = re.sub(r"\s+", " ", txt)[:80]
+                break
     for line in reversed(blob.splitlines()):
         line = line.strip()
         if not line:
@@ -185,7 +251,7 @@ def _tail_meta(path: str) -> dict:
         elif t == "last-prompt" and not meta["last_prompt"]:
             meta["last_prompt"] = (rec.get("lastPrompt") or "").strip()
         elif t in ("user", "assistant") and not rec.get("isSidechain") and not meta["preview"]:
-            txt, _ = _text_of((rec.get("message") or {}).get("content"))
+            txt, _ = _text_of(_content_of(rec.get("message") or {}))
             meta["preview"] = re.sub(r"\s+", " ", txt)[:160]
             meta["model"] = (rec.get("message") or {}).get("model") or ""
             meta["branch"] = rec.get("gitBranch") or ""
@@ -206,6 +272,7 @@ def entry(session_id: str, path: str, cwd_hint: str = "") -> dict:
         "cwd": meta["cwd"] or cwd_hint,
         "ai_title": meta["ai_title"],
         "last_prompt": meta["last_prompt"],
+        "first_prompt": meta["first_prompt"],
         "preview": meta["preview"],
         "model": meta["model"],
         "branch": meta["branch"],
@@ -275,23 +342,43 @@ def sessions_in(cwd: str, limit: int = 12) -> list[dict]:
 
 # ------------------------------------------------------------------ paging
 def page(path: str, before: int | None = None, limit: int = 20) -> dict:
+    """倒序分页。
+
+    按「消息条数」分页，不是按行数：qwen code 的 jsonl 里 system 快照占了绝大多数
+    （实测 73 行里只有 10 条消息），按行取 20 行会翻出半页空。所以不够就继续往前读，
+    直到凑够 limit 条或读到文件头（PAGE_SCAN_MAX 行封顶，别把大文件整个扫一遍）。
+    """
     offs = LineIndex.offsets(path)
     total = len(offs)
     if total == 0:
         return {"items": [], "has_more": False, "next_before": None, "total": 0}
     limit = max(1, min(int(limit or 20), 100))
     upper = int(before) if before else total + 1
-    start = max(1, upper - limit)
-    raw = _read_lines(path, offs, start, upper)
-    items = []
-    for i, line in enumerate(raw):
-        try:
-            rec = json.loads(line)
-        except Exception:
-            continue
-        m = normalize(rec, start + i)
-        if m:
-            items.append(m)
+    seg_stop = upper
+    seg_start = max(1, upper - limit)
+    segs: list[list[dict]] = []                    # 每段内部是时间顺序，段之间是从新到旧
+    n_items = 0
+    scanned = 0
+    while True:
+        raw = _read_lines(path, offs, seg_start, seg_stop)
+        scanned += len(raw)
+        seg: list[dict] = []
+        for i, line in enumerate(raw):
+            try:
+                rec = json.loads(line)
+            except Exception:
+                continue
+            m = normalize(rec, seg_start + i)
+            if m:
+                seg.append(m)
+        segs.append(seg)
+        n_items += len(seg)
+        if n_items >= limit or seg_start <= 1 or scanned >= PAGE_SCAN_MAX:
+            break
+        seg_stop = seg_start                       # 再往前翻一段
+        seg_start = max(1, seg_start - limit)
+    items = [m for seg in reversed(segs) for m in seg]     # 翻回时间顺序
+    start = seg_start
     return {
         "items": items,
         "has_more": start > 1,

@@ -155,6 +155,14 @@ panel/
 
 ## 更新日志
 
+- **1.0.8** — 非 claude agent 也能翻历史了（qwen code 实测可用）。以前面板只认
+  `~/.claude/projects/<slug>/<uuid>.jsonl`，qwen code 这类「其实也把对话落盘成
+  jsonl」的 CLI 被一律当成纯终端，页面上只有「没有历史文件，下方是实时屏幕」。
+  现在历史源由适配器声明驱动：`adapters/*.yaml` 加一段 `history:`，面板据此把
+  正在跑的进程绑到它的会话文件（qwen：`--resume <uuid>` / `chats/*.runtime.json`
+  里的 `{pid, session_id}` / cwd 目录下最新一个）。
+  同时修了两处：qwen 的正文在 `message.parts`（不是 `content`），已归一；
+  分页改为**按消息条数**（qwen 的 jsonl 里 system 快照占了绝大多数，按行翻会翻出半页空）。
 - **1.0.7** — 修复挂在 nginx 子路径下白屏：页面里的静态资源/API/WebSocket 以前是写死的
   根绝对路径（`/static/...`、`/api/...`、`/ws`），挂在 `https://host/xxx-panel/` 这类
   反代子路径下时，浏览器会跑到站点根去找资源，结果就是 CSS/JS 全 404、页面全白。
@@ -168,6 +176,22 @@ panel/
 - **1.0.5** — PyPI 描述与仓库互链（[sbp-spec](https://github.com/sbp4ai/sbp-spec)）。
 - **1.0.4** — 统一适配器声明（aider / opencode / qodercli），多 CLI 识别以
   `sbp-spec/spec/adapters/*.yaml` 为唯一真相源；新增 CORS 与 `SBP4AI` 品牌。
+
+## 多 CLI 的历史：适配器里声明 `history`
+
+面板默认只认 claude 的 jsonl。要让别的 CLI 也能翻历史，在它的适配器声明里加一段：
+
+```yaml
+history:
+  root: "~/.qwen/projects"                 # 历史文件根
+  glob: "*/chats/*.jsonl"                  # 相对 root 的匹配
+  cwd_dir: "{slug}/chats"                  # 兜底：cwd 对应的目录（{slug} 与 claude 同规则）
+  id_from_cmdline: '--resume\s+([0-9a-fA-F-]{8,})'   # 从进程命令行抠 session id
+  runtime: {glob: "*/chats/*.runtime.json", pid: pid, sid: session_id}  # pid -> sid 映射
+  format: parts                            # 正文在 message.parts（claude 用 content）
+```
+
+没写这段的 agent 保持原样：只用实时屏幕（`kind: term`），不会误伤。
 
 ## 挂在反代子路径下（nginx）
 

@@ -281,7 +281,8 @@ async def http_history(request: Request, sid: str = "", before: str = "", limit:
     """倒序分页拉历史（懒加载：点开才读）。"""
     if not _http_auth(request):
         return _deny()
-    path = claude.find_by_sid(sid)
+    await hub.index()          # 先建索引：终端会话绑的历史文件记在索引里
+    path = hub.resolve_path(sid)
     if not path:
         return JSONResponse({"ok": False, "error": "会话不存在"}, status_code=404)
     loop = asyncio.get_running_loop()
@@ -504,7 +505,8 @@ async def _dispatch(c: Client, f: dict) -> None:
         return
 
     if name == "session.history":
-        path = claude.find_by_sid(sid)
+        await hub.index()          # 终端会话（qwen code 等）的历史文件记在索引里
+        path = hub.resolve_path(sid)
         if not path:
             await c.send(_res(rid, name, False, err={"code": "E_NO_SESSION", "msg": "会话不存在"}))
             return

@@ -38,15 +38,26 @@ try:
     _ADAPTERS = load_dirs(ADAPTER_DIRS)
     CMD_TO_AGENT: dict[str, str] = {}
     AGENT_DISPLAY: dict[str, str] = {}
+    ADAPTER_DATA: dict[str, dict] = {}
     for _a in _ADAPTERS:
         for _c in (_a.data.get("match") or {}).get("cmd") or []:
             CMD_TO_AGENT.setdefault(_c, _a.agent)
         AGENT_DISPLAY[_a.agent] = _a.data.get("display", _a.agent)
+        ADAPTER_DATA[_a.agent] = _a.data
     _ADAPTER_OK = True
 except Exception:                                      # bridge 不在 / 没装 yaml：退回内置清单
     _ADAPTER_OK = False
     CMD_TO_AGENT = {}
     AGENT_DISPLAY = {}
+    ADAPTER_DATA = {}
+
+
+def adapter_data() -> dict[str, dict]:
+    """agent id -> 完整适配器声明（含 history 段），给 histories.py 用。"""
+    try:
+        return ADAPTER_DATA or {}
+    except NameError:                                  # 加载半途炸了也会落到这里
+        return {}
 
 if not CMD_TO_AGENT:                                   # 兜底：保证至少认识最常见的几种
     CMD_TO_AGENT = {

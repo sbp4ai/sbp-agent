@@ -305,6 +305,8 @@
     S.groups = pl.groups || [];
     S.sidToTmux = pl.sid_to_tmux || {};
     renderTree();
+    // 刚打开时还认成纯终端、后来绑上了历史文件（qwen 刚写出第一条）-> 补一次加载
+    if (S.cur && S.cur.noHist && hasHistory(S.cur.sid)) loadLatest();
   }
 
   function flushPendingIndex() {
@@ -454,16 +456,34 @@
     loadLatest();
   }
 
+  function itemOf(sid) {
+    for (var i = 0; i < S.groups.length; i++) {
+      var its = S.groups[i].items || [];
+      for (var j = 0; j < its.length; j++) if (its[j].sid === sid) return its[j];
+    }
+    return null;
+  }
+
+  // 有没有历史可翻：claude 一直有；qwen code 这类「终端会话」现在也能绑到
+  // 落盘的 jsonl（后端索引里的 has_history），不再是纯屏幕
+  function hasHistory(sid) {
+    if (sid.slice(0, 5) !== "term:") return true;
+    var it = itemOf(sid);
+    return !!(it && it.has_history);
+  }
+
   function loadLatest() {
     var sid = S.cur.sid;
     // dsh / codex 这类没有 jsonl 的会话：没有历史可翻，直接进实时屏幕
-    if (sid.slice(0, 5) === "term:") {
+    if (!hasHistory(sid)) {
+      S.cur.noHist = true;
       clearPrompt();
       $("#msgs").innerHTML = '<div class="more">纯终端会话 · 没有历史文件，下方是实时屏幕</div>';
       attach(sid);
       updateComposerHint();
       return;
     }
+    S.cur.noHist = false;
     req("session.history", { sid: sid, limit: 20 }, sid).then(function (pl) {
       if (!S.cur || S.cur.sid !== sid) return;
       $("#msgs").innerHTML = "";

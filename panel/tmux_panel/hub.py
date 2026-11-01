@@ -17,6 +17,7 @@ import time
 from typing import Optional
 
 from . import claude
+from . import histories
 from . import live
 from . import prompt as promptmod
 from .tmux import Tmux
@@ -71,6 +72,8 @@ def _slim(it: dict) -> dict:
         "kind": it.get("kind", "claude"),
         "agent": it.get("agent", "claude-code"),
         "agent_display": live.display_of(it.get("agent", "claude-code")),
+        # 有落盘历史就能翻页（claude 一直有；qwen code 现在也能认出来，见 histories.py）
+        "has_history": bool(it.get("file") or it.get("path")),
         # 侧栏配色：True = 这个 tmux 里当前挂着它的那个会话（深色）
         "active": bool(it.get("active")),
     }
@@ -85,6 +88,8 @@ def build_index() -> dict:
     covered_cwd: set[str] = set()
     sid_to_tmux: dict[str, str] = {}
     sid_to_agent: dict[str, str] = {}
+    sid_to_path: dict[str, str] = {}
+    used_paths: set[str] = set()
     now = int(time.time() * 1000)
 
     for s in Tmux.list_sessions():
@@ -107,6 +112,9 @@ def build_index() -> dict:
         for it in items:
             sid_to_tmux.setdefault(it["sid"], s["name"])
             sid_to_agent.setdefault(it["sid"], "claude-code")
+            if it.get("file"):
+                sid_to_path.setdefault(it["sid"], it["file"])
+                used_paths.add(it["file"])
             a = claude.anno.get(it["sid"])
             it["title"] = a.get("title") or it["short"]
             it["subtitle"] = a.get("subtitle") or it["ai_title"] or it["last_prompt"][:80] or ""
@@ -137,6 +145,24 @@ def build_index() -> dict:
                 t = _screen_title(pane_id)
                 if t:
                     sub = f"{disp} · {t}"
+            # 这个 agent 把对话落在了 jsonl（qwen code 就是这种）-> 这个「终端会话」
+            # 其实是有历史可翻的，把文件绑上去，别让前端退化成纯屏幕
+            hist = ""
+            try:
+                hist = histories.resolve(ag, p, (p.get("cwd") or cwd)) or ""
+            except Exception:
+                hist = ""
+            hmeta: dict = {}
+            if hist:
+                try:
+                    st = os.stat(hist)
+                    hmeta = claude._tail_meta(hist)
+                    prev = (hmeta.get("preview") or hmeta.get("first_prompt") or "").strip()
+                    if prev:
+                        sub = f"{disp} · {prev[:50]}"
+                    used_paths.add(hist)
+                except OSError:
+                    hist = ""
             tinfo = {
                 "sid": sid,
                 "short": (s["name"] if n_term == 1 else f"{s['name']}/{pane_id.lstrip('%')}")[:8],
@@ -144,15 +170,24 @@ def build_index() -> dict:
                 "subtitle": sub,
                 # 用 tmux 会话的创建时间，别用 now：否则索引指纹每次都变，
                 # ETag / If-None-Match 永远命中不了 304，轮询白白重传整份索引
-                "custom": False, "count": 0, "updated_at": int(s.get("created") or 0),
+                "custom": False,
+                # 大文件不建行索引（会整文件扫一遍），只给 0
+                "count": (claude.LineIndex.count(hist)
+                          if (hist and st.st_size < 8 * 1024 * 1024) else 0),
+                # 绑到历史文件后用文件的 mtime：这样「最后一条消息什么时候来的」
+                # 才是准的；没文件时退回 tmux 会话创建时间
+                "updated_at": int(st.st_mtime * 1000) if hist else int(s.get("created") or 0),
                 "branch": "", "tmux": s["name"],
                 "kind": "term", "agent": ag,
+                "path": hist,
                 # 只有「此刻还在跑」才是深色；只剩启动痕迹 -> 灰
                 "active": bool(ra),
             }
             items.append(tinfo)
             sid_to_tmux.setdefault(sid, s["name"])
             sid_to_agent.setdefault(sid, ag)
+            if hist:
+                sid_to_path.setdefault(sid, hist)
 
         # 这个 tmux 里「正在被 claude 用着」的那个会话：只有它深色，其余灰色
         act, src = live.active_sid(panes, [i for i in items if i.get("kind") != "term"], claude_live)
@@ -200,9 +235,33 @@ def build_index() -> dict:
             it["custom"] = bool(a.get("title") or a.get("subtitle"))
             it["tmux"] = ""
             seen.add(it["sid"])
+            if it.get("file"):
+                sid_to_path.setdefault(it["sid"], it["file"])
+                used_paths.add(it["file"])
             orphans.append(_slim(it))
             if len(orphans) >= 8:
                 break
+
+    # 同样兜底非 claude agent（qwen code 等）：昨天跑的会话不该因为今天没开 tmux 就消失
+    if len(orphans) < 8:
+        try:
+            extra = histories.recent(limit=8 - len(orphans), exclude=used_paths)
+        except Exception:
+            extra = []
+        for it in extra:
+            if it["sid"] in seen or it["sid"] in sid_to_tmux:
+                continue
+            a = claude.anno.get(it["sid"])
+            it["title"] = a.get("title") or it["short"]
+            it["subtitle"] = (a.get("subtitle") or it["ai_title"] or it["first_prompt"]
+                              or it["last_prompt"][:80] or it["preview"][:60] or it["cwd"])
+            it["custom"] = bool(a.get("title") or a.get("subtitle"))
+            it["tmux"] = ""
+            it["active"] = False
+            seen.add(it["sid"])
+            sid_to_path.setdefault(it["sid"], it["file"])
+            used_paths.add(it["file"])
+            orphans.append(_slim(it))
     if orphans:
         groups.append({
             "kind": "orphan", "name": "其他会话", "cwd": "",
@@ -211,7 +270,7 @@ def build_index() -> dict:
         })
 
     return {"ts": now, "groups": groups, "sid_to_tmux": sid_to_tmux,
-            "sid_to_agent": sid_to_agent}
+            "sid_to_agent": sid_to_agent, "sid_to_path": sid_to_path}
 
 
 class Watch:
@@ -343,6 +402,15 @@ class Hub:
             "status": w.last_state or "idle",
         }
 
+    def resolve_path(self, sid: str) -> Optional[str]:
+        """sid -> 会话文件路径。claude 按 PROJECTS 反查，qwen 等查索引里绑好的那份。"""
+        p = claude.find_by_sid(sid)
+        if p:
+            return p
+        if self._index_cache:
+            return (self._index_cache[1].get("sid_to_path") or {}).get(sid) or None
+        return None
+
     def _ensure_watch(self, sid: str) -> Optional[Watch]:
         """按 sid 建/取 watch，逻辑与 attach 一致（抽出来给 REST 复用）。"""
         if sid.startswith("term:"):
@@ -350,9 +418,13 @@ class Hub:
             pane = ""
             if "#" in rest:
                 rest, pane = rest.split("#", 1)
-            path, tmux_name = None, (pane or rest)
+            # 终端会话也可能绑着历史文件（qwen code），查索引里记下的那份
+            path = ""
+            if self._index_cache:
+                path = (self._index_cache[1].get("sid_to_path") or {}).get(sid, "")
+            tmux_name = (pane or rest)
         else:
-            path = claude.find_by_sid(sid)
+            path = self.resolve_path(sid)
             if not path:
                 return None
             tmux_name = ""
