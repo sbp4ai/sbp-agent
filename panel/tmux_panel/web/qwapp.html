@@ -193,7 +193,8 @@
       if(a) return a.replace(/\/+$/,'');
       if(window.SBP_CONFIG && window.SBP_CONFIG.api) return String(window.SBP_CONFIG.api).replace(/\/+$/,'');
     }catch(e){}
-    return '';  // 同源
+    // 同源兜底：服务端注入的前缀（子路径部署），没有就是站点根
+    return window.__PANEL_BASE__ ? String(window.__PANEL_BASE__).replace(/\/+$/,'') : '';
   }
   var API = resolveApi();
   function url(p){ return API ? (API + p) : p; }

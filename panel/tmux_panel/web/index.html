@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="color-scheme" content="light">
 <title>SBP4AI</title>
-<link rel="stylesheet" href="/static/style.css">
+<!-- @@PANEL_BASE@@ 由服务端替换 + 服务端会在 <head> 注入 window.@@PANEL_BASE@@：
+     直接跑站点根时是 "/"，挂在反代子路径下时是形如 "/ecs-coder-panel/" 的前缀。
+     缺了它，下面的 /static/... 会指到站点根去，表现就是白屏。 -->
+<link rel="stylesheet" href="@@PANEL_BASE@@static/style.css">
 </head>
 <body>
 
@@ -74,6 +77,6 @@
 
 <div class="scrim" id="scrim"></div>
 <div class="toast" id="toast"></div>
-<script src="/static/app.js"></script>
+<script src="@@PANEL_BASE@@static/app.js"></script>
 </body>
 </html>

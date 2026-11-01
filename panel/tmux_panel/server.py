@@ -622,17 +622,97 @@ async def _dispatch(c: Client, f: dict) -> None:
     await c.send(_res(rid, name, False, err={"code": "E_UNKNOWN_NAME", "msg": f"未知请求 {name}"}))
 
 
+# ---------------------------------------------------------------- 子路径部署前缀
+def _norm_base(raw: str) -> str:
+    """归一化成 `/xxx/` 形式；空/非法一律退回 "/"。"""
+    raw = (raw or "").strip()
+    if not raw:
+        return "/"
+    # 会写进内联 <script> 的字符串常量里，含引号/反斜杠就别用
+    if '"' in raw or "'" in raw or "\\" in raw:
+        return "/"
+    if not raw.startswith("/"):
+        raw = "/" + raw
+    if not raw.endswith("/"):
+        raw += "/"
+    return raw
+
+
+def resolve_base(request: Request | None = None) -> str:
+    """面板对外暴露的路径前缀。
+
+    优先级：环境变量 PANEL_BASE > 反代下发的 X-Forwarded-Prefix > "/"。
+    挂在 nginx 子路径（如 /ecs-coder-panel/）下时，页面里的静态资源、API、
+    WebSocket 都得带上这个前缀，否则浏览器会去站点根找，表现就是白屏。
+    """
+    env = _norm_base(os.getenv("PANEL_BASE", ""))
+    if env != "/":
+        return env
+    hdr = ""
+    if request is not None:
+        hdr = request.headers.get("x-forwarded-prefix", "")
+    return _norm_base(hdr)
+
+
 # ---------------------------------------------------------------- static
 if WEB_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 
 
+#: index.html / sidebar.html 里用来占位路径前缀的记号。特意避开 `__PANEL_BASE__`
+#: —— 那是注入进页面的 JS 变量名，两者同名的话 str.replace 会把变量名也换掉，
+#: 页面吐出 `window./ecs-coder-panel/="..."` 这种非法 JS。
+BASE_TOKEN = "@@PANEL_BASE@@"
+
+
+def _html_page(name: str, request: Request) -> Response:
+    """读 web/ 下的页面，替换前缀占位符并在 <head> 注入 window.__PANEL_BASE__。"""
+    f = WEB_DIR / name
+    if not f.exists():
+        return HTMLResponse(f"<h1>页面缺失：{name}</h1>", status_code=404)
+    try:
+        html = f.read_text(encoding="utf-8")
+    except Exception as e:  # pragma: no cover
+        return HTMLResponse(f"<h1>读取失败：{e}</h1>", status_code=500)
+
+    base = resolve_base(request)
+    html = html.replace(BASE_TOKEN, base)
+
+    # 无条件注入：没在 HTML 里写占位符的页面（如 qwapp.html）也能拿到前缀。
+    # 已经写了 <script> 的页面会重复赋值一次同一个值，无害。
+    inject = f'<script>window.__PANEL_BASE__="{base}";</script>\n'
+    low = html.lower()
+    i = low.find("<head")
+    if i >= 0:
+        j = html.find(">", i)
+        if j >= 0:
+            html = html[:j + 1] + "\n" + inject + html[j + 1:]
+        else:
+            html = inject + html
+    else:
+        html = inject + html
+
+    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+
 @app.get("/")
-async def index_page():
-    f = WEB_DIR / "index.html"
-    if f.exists():
-        return FileResponse(f)
-    return HTMLResponse("<h1>web/ 缺失</h1>", status_code=500)
+async def index_page(request: Request):
+    return _html_page("index.html", request)
+
+
+@app.get("/index.html")
+async def index_html(request: Request):
+    return _html_page("index.html", request)
+
+
+@app.get("/sidebar.html")
+async def sidebar_html(request: Request):
+    return _html_page("sidebar.html", request)
+
+
+@app.get("/qwapp.html")
+async def qwapp_html(request: Request):
+    return _html_page("qwapp.html", request)
 
 
 @app.get("/favicon.ico")

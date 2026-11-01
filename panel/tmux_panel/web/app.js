@@ -6,6 +6,11 @@
 
   var V = "sbp/0.1";
 
+  // 子路径/反代部署：服务端把前缀注入到 window.__PANEL_BASE__（见 index.html）。
+  // 没注入（直接跑在站点根）时退化为 "/"，行为与旧版完全一致。
+  var BASE = window.__PANEL_BASE__ || "/";
+  if (BASE.charAt(BASE.length - 1) !== "/") BASE += "/";
+
   var S = {
     ws: null,
     retry: 0,
@@ -67,7 +72,7 @@
   // ------------------------------------------------------------ auth
   function boot() {
     S.collapsed = collapseState();
-    fetch("/api/me", { credentials: "same-origin" })
+    fetch(BASE + "api/me", { credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (me) {
         S.authOn = !!me.auth;
@@ -83,7 +88,7 @@
     $("#loginForm").onsubmit = function (e) {
       e.preventDefault();
       var body = { account: $("#acc").value.trim(), password: $("#pwd").value };
-      fetch("/api/login", {
+      fetch(BASE + "api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body)
@@ -131,7 +136,7 @@
   /** 把 SBP 帧装进一次 HTTP 请求：res 取回，evt 顺手喂给 onFrame。 */
   function rpc(frames) {
     var id = frames[0].id;
-    return fetch("/api/rpc", {
+    return fetch(BASE + "api/rpc", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ frames: frames })
     }).then(function (r) { return r.json(); }).then(function (j) {
@@ -152,14 +157,14 @@
     payload = payload || {};
     if (name === "sessions.index") {
       // 不传 refresh：索引由服务端 tick 统一重建，这里只读缓存 + ETag 比对
-      return getJSON("/api/index", "idx");
+      return getJSON(BASE + "api/index", "idx");
     }
     if (name === "pane.snapshot") {
-      return getJSON("/api/state?sid=" + encodeURIComponent(sid) +
+      return getJSON(BASE + "api/state?sid=" + encodeURIComponent(sid) +
         "&interval=" + (TP.interval / 1000), "st:" + sid);
     }
     if (name === "session.history") {
-      return getJSON("/api/history?sid=" + encodeURIComponent(sid) +
+      return getJSON(BASE + "api/history?sid=" + encodeURIComponent(sid) +
         "&before=" + encodeURIComponent(payload.before || "") +
         "&limit=" + (payload.limit || 20), "hi:" + sid + ":" + (payload.before || ""));
     }
@@ -206,7 +211,7 @@
       startPolling();
       return;
     }
-    var url = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws";
+    var url = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + BASE + "ws";
     var q = new URLSearchParams(location.search).get("token");
     if (q) url += "?token=" + encodeURIComponent(q);
     var ws;

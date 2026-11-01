@@ -155,6 +155,12 @@ panel/
 
 ## 更新日志
 
+- **1.0.7** — 修复挂在 nginx 子路径下白屏：页面里的静态资源/API/WebSocket 以前是写死的
+  根绝对路径（`/static/...`、`/api/...`、`/ws`），挂在 `https://host/xxx-panel/` 这类
+  反代子路径下时，浏览器会跑到站点根去找资源，结果就是 CSS/JS 全 404、页面全白。
+  现在面板自查 `PANEL_BASE` 环境变量或反代下发的 `X-Forwarded-Prefix` 请求头，
+  把前缀注入页面（`window.__PANEL_BASE__`），`app.js` / `sidebar.html` / `qwapp.html`
+  一律按前缀拼 URL。直接跑在站点根时行为不变。
 - **1.0.6** — 修复 Linux 下 `/api/index` 返回 500：进程树遍历里
   `stack.extend(kids.get(cur))` 在节点没有子进程时拿到 `None` 会抛
   `TypeError: 'NoneType' object is not iterable`（`live.py::_tree`）。
@@ -162,3 +168,17 @@ panel/
 - **1.0.5** — PyPI 描述与仓库互链（[sbp-spec](https://github.com/sbp4ai/sbp-spec)）。
 - **1.0.4** — 统一适配器声明（aider / opencode / qodercli），多 CLI 识别以
   `sbp-spec/spec/adapters/*.yaml` 为唯一真相源；新增 CORS 与 `SBP4AI` 品牌。
+
+## 挂在反代子路径下（nginx）
+
+面板本身始终提供根路径的服务；反代剥掉前缀后请求照样落在 `/`、`/api/*`、`/ws`、
+`/static/*`。唯一要做的是**告诉面板它对外叫什么前缀**，它会据此生成页面里的 URL：
+
+| 方式 | 用法 |
+|---|---|
+| 请求头（推荐，一个实例可同时服务根和多个前缀） | `proxy_set_header X-Forwarded-Prefix /ecs-coder-panel;` |
+| 环境变量（固定前缀） | `PANEL_BASE=/ecs-coder-panel/` |
+
+参考 nginx 配置见 `sbp-deploy/nginx/sbp-panel-subpath.conf`。**不再需要**早先那套
+`sub_filter` 字符串替换（`/src/`、`/node_modules/`、`'/api` …）——那是给旧 vite 前端用的，
+留着反而会改写坏新面板的输出。

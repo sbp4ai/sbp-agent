@@ -162,7 +162,7 @@
       <option value="10000">10s</option>
       <option value="0">手动</option>
     </select>
-    <a href="/" target="_blank" rel="noopener">完整面板</a>
+    <a href="@@PANEL_BASE@@" target="_blank" rel="noopener">完整面板</a>
   </div>
 </div>
 
@@ -176,7 +176,7 @@
   if (Q.get("embed") === "1") document.body.classList.add("embed");
 
   var INTERVAL = Number(Q.get("poll") || 5000);
-  var BASE = "";                     // same origin as the panel that serves this page
+  var BASE = (window.@@PANEL_BASE@@ || "/").replace(/\/+$/, "");   // 子路径前缀，由服务端注入
   var API_INDEX = BASE + "/api/index";
 
   var el = {
